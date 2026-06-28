@@ -1,0 +1,12 @@
+Title: Corporate Privacy and AI Policy
+Date: 2026-06-01
+Department: Security
+
+1. OVERVIEW
+This policy outlines our procedures for handling client and internal corporate data. The Security department manages audits.
+
+2. AI TOOLS USE
+Employees are permitted to use local offline RAG engines. Using public generative APIs like ChatGPT or Claude for proprietary codebase analysis is strictly prohibited.
+
+3. VENDOR AUDITS
+Vendor XYZ must submit security audits annually to ensure GDPR compliance.
