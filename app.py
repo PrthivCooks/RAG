@@ -285,20 +285,20 @@ st.markdown("""
 @st.cache_resource
 def get_retriever():
     """Initializes and caches the hybrid search coordinator."""
-    try:
-        import spacy
-        # Load spaCy model
-        nlp = spacy.load("en_core_web_sm")
-        retriever = HybridRetriever(nlp)
-        # Attempt to load saved indexes
-        retriever.load_indexes()
-        return retriever
-    except Exception as e:
-        st.error(f"Failed to initialize search engine: {e}")
-        return None
+    import spacy
+    # Load spaCy model
+    nlp = spacy.load("en_core_web_sm")
+    retriever = HybridRetriever(nlp)
+    # Attempt to load saved indexes
+    retriever.load_indexes()
+    return retriever
 
 # Load Retriever
-retriever = get_retriever()
+try:
+    retriever = get_retriever()
+except Exception as e:
+    st.error(f"Failed to initialize search engine: {e}")
+    retriever = None
 
 # Check if index files exist on disk
 index_files = [INDEX_DIR / "faiss.idx", INDEX_DIR / "bm25.pkl", INDEX_DIR / "graph.pkl", INDEX_DIR / "chunks.pkl"]
@@ -348,6 +348,13 @@ def run_in_memory_ingestion(uploaded_files, clear_existing=True):
         status_text.text("Document Processor loading model references...")
         progress_bar.progress(10)
         
+        if retriever is None:
+            st.error("Failed to compile indexes: the search engine retriever could not be initialized.")
+            time.sleep(3)
+            progress_bar.empty()
+            status_text.empty()
+            return False
+            
         processor = DocumentProcessor(retriever.embedding_model, retriever.nlp)
         
         status_text.text("Extracting text contents, detecting department metadata, and chunking...")
