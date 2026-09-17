@@ -1,14 +1,23 @@
 import json
 import streamlit as st
+import streamlit.components.v1 as components
 from pathlib import Path
 from datetime import datetime
 
-from config import DATA_DIR, INDEX_DIR, RRF_WEIGHTS, FINAL_TOP_K, DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
+from config import (
+    DATA_DIR, INDEX_DIR, RRF_WEIGHTS, FINAL_TOP_K, DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP,
+    SEC_SECTIONS, FINANCIAL_METRICS_SCHEMA, LOUGHRAN_MCDONALD_LEXICON
+)
 from core.hybrid_retriever import HybridRetriever
+from core.semantic_shift import SemanticShiftAnalyzer
+from core.financial_extractor import FinancialMetricExtractor
+from core.financial_qa import EvidenceGroundedFinancialQA
+from core.evaluator import ResearchEvaluator
+from finetune.prepare_finetuning import FinancialFineTuningPreparer
 
 # Set Streamlit Page Configuration
 st.set_page_config(
-    page_title="Enterprise Hybrid Knowledge Engine",
+    page_title="Enterprise Hybrid Knowledge Engine | TEEP 2026",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -332,13 +341,20 @@ def run_in_memory_ingestion(uploaded_files, clear_existing=True):
             if item.is_file():
                 item.unlink()
 
-    # 2. Save uploaded file contents
+    # 2. Save uploaded file contents or copy disk sample files
     saved_paths = []
-    for uploaded_file in uploaded_files:
-        target_path = DATA_DIR / uploaded_file.name
-        with open(target_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        saved_paths.append(target_path)
+    for item_file in uploaded_files:
+        if isinstance(item_file, (str, Path)):
+            p = Path(item_file)
+            target_path = DATA_DIR / p.name
+            with open(p, "rb") as sf, open(target_path, "wb") as df:
+                df.write(sf.read())
+            saved_paths.append(target_path)
+        else:
+            target_path = DATA_DIR / item_file.name
+            with open(target_path, "wb") as f:
+                f.write(item_file.getbuffer())
+            saved_paths.append(target_path)
         
     # Create streamlit progress indicators
     progress_bar = st.progress(0)
@@ -485,6 +501,32 @@ with st.sidebar:
         options=departments,
         index=0
     )
+
+    # Dynamic Financial Metadata Filters (Company, Fiscal Year, SEC Section)
+    companies = ["All"]
+    years = ["All"]
+    sec_sections_list = ["All", "Item 1 (Business)", "Item 1A (Risk Factors)", "Item 7 (MD&A)", "Item 8 (Financial Statements)"]
+
+    if indexes_exist and retriever and retriever.chunks_lookup:
+        comps_in_data = sorted(list(set(
+            chunk["metadata"].get("company", "")
+            for chunk in retriever.chunks_lookup.values()
+            if chunk["metadata"].get("company") and chunk["metadata"].get("company") != "Unknown Company"
+        )))
+        if comps_in_data:
+            companies.extend(comps_in_data)
+
+        years_in_data = sorted(list(set(
+            str(chunk["metadata"].get("fiscal_year", ""))
+            for chunk in retriever.chunks_lookup.values()
+            if chunk["metadata"].get("fiscal_year") and chunk["metadata"].get("fiscal_year") != "N/A"
+        )))
+        if years_in_data:
+            years.extend(years_in_data)
+
+    selected_company = st.selectbox("Filter by Company / Ticker", options=companies, index=0)
+    selected_year = st.selectbox("Filter by Fiscal Year", options=years, index=0)
+    selected_sec = st.selectbox("Filter by SEC Section", options=sec_sections_list, index=0)
     
     num_results = st.number_input(
         "Max Results",
@@ -504,6 +546,11 @@ with st.sidebar:
         "Enable Parent-Child Expansion",
         value=True,
         help="Match precise small child chunks but display the larger parent paragraph for summarization and results."
+    )
+    enable_fin_expansion = st.checkbox(
+        "Financial Terminology Expansion",
+        value=True,
+        help="Expands queries with accounting synonyms and SEC financial taxonomy terms."
     )
 
     st.markdown("---")
@@ -532,8 +579,17 @@ st.markdown(
 if False:
     st.markdown("Onboarding")
 else:
-    # We have documents indexed! Show Search Interface with Visualizer Tab
-    tab_about, tab_search, tab_graph = st.tabs(["Home / About", "Search Engine", "Knowledge Graph Visualizer"])
+    # All tabs rendered with Neo-Brutalist styling
+    tab_about, tab_search, tab_graph, tab_filings, tab_semantic_shift, tab_metrics, tab_qa, tab_eval = st.tabs([
+        "Home / About",
+        "Search Engine",
+        "Knowledge Graph Visualizer",
+        "SEC Annual Reports",
+        "Semantic Shift & Narrative Drift",
+        "Financial Metrics & Audit",
+        "Evidence-Grounded Q&A",
+        "Research Evaluation & Ablation"
+    ])
     
     with tab_about:
         # Title banner card
@@ -808,8 +864,12 @@ else:
                         k=num_results,
                         alpha=alpha,
                         department_filter=selected_dept,
+                        company_filter=selected_company,
+                        year_filter=selected_year,
+                        section_filter=selected_sec,
                         use_decomposition=use_decomposition,
-                        use_parent_retrieval=use_parent_retrieval
+                        use_parent_retrieval=use_parent_retrieval,
+                        enable_financial_expansion=enable_fin_expansion
                     )
                     
                     results = results_dict["results"]
@@ -851,6 +911,14 @@ else:
                                 size = chunk["metadata"]["file_size_bytes"]
                                 text_highlighted = chunk["highlighted_text"]
                                 
+                                # Financial badges
+                                fin_badges = ""
+                                if chunk["metadata"].get("is_financial_report"):
+                                    c_tick = chunk["metadata"].get("ticker", "GEN")
+                                    c_yr = chunk["metadata"].get("fiscal_year", "")
+                                    c_sec = chunk["metadata"].get("section", "BODY")
+                                    fin_badges = f'<span class="dept-badge" style="background-color:#38BDF8; margin-left:6px;">{c_tick} FY{c_yr}</span> <span class="dept-badge" style="background-color:#A855F7; margin-left:6px;">{c_sec}</span>'
+
                                 fused_score = chunk["fused_score"]
                                 rerank_score = chunk.get("rerank_score", 0.0)
                                 
@@ -864,7 +932,10 @@ else:
                                 <div class="result-card">
                                     <div class="card-header">
                                         <span class="doc-title">{filename}</span>
-                                        <span class="dept-badge">{dept}</span>
+                                        <div>
+                                            <span class="dept-badge">{dept}</span>
+                                            {fin_badges}
+                                        </div>
                                     </div>
                                     <div class="meta-line">
                                         Document Date: {doc_date} | File Size: {size} bytes | Path: <code style="font-size:0.75rem;">{filepath}</code>
@@ -1269,3 +1340,550 @@ else:
                 
                 components.html(html_template, height=650)
                 st.caption("Tip: You can use zoom (scroll) and pan (drag background) to explore dense parts of the document graph structure.")
+
+    # =========================================================================
+    # TAB 4: SEC ANNUAL REPORTS & FILINGS MANAGEMENT
+    # =========================================================================
+    with tab_filings:
+        st.markdown("""
+        <div style="background-color: #121318; border: 3px solid #FFFFFF; padding: 20px; margin-bottom: 24px; box-shadow: 5px 5px 0px 0px #2563EB;">
+            <h3 style="color: #FFDE4D; margin-top: 0; font-weight: 700; font-family: 'Space Grotesk', sans-serif;">SEC ANNUAL REPORTS & CORPORATE FILINGS</h3>
+            <p style="font-size: 0.95rem; line-height: 1.6; color: #FFFFFF; opacity: 0.9; margin-bottom: 0;">
+                Ingest, parse, and segment multi-year corporate annual reports (Form 10-K and 10-Q).
+                The engine extracts SEC Item boundaries (Item 1 Business, Item 1A Risk Factors, Item 7 MD&A, Item 8 Financial Statements)
+                and builds section-isolated index representations for cross-year semantic comparison.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        col_f1, col_f2 = st.columns([1, 1])
+        with col_f1:
+            st.markdown("#### Load Verified Research Benchmark Filings")
+            st.info("Pre-packaged multi-year Form 10-Ks for Apple Inc. (FY2023 vs FY2024) and Microsoft Corp (FY2023 vs FY2024).")
+            if st.button("Load TEEP 2026 Sample 10-K Filings (AAPL & MSFT)", use_container_width=True):
+                sample_dir = Path(__file__).resolve().parent / "data_test" / "financial_samples"
+                sample_files = list(sample_dir.glob("*.txt"))
+                if sample_files:
+                    with st.spinner("Processing and indexing multi-year financial 10-Ks..."):
+                        if run_in_memory_ingestion(sample_files, clear_existing=True):
+                            st.success("Loaded and indexed multi-year filings!")
+                            st.rerun()
+                else:
+                    st.error("Sample directory data_test/financial_samples/ not found.")
+
+        with col_f2:
+            st.markdown("#### Upload Custom Annual Reports")
+            uploaded_sec = st.file_uploader(
+                "Upload Form 10-K / 10-Q (.pdf, .docx, .txt):",
+                type=["pdf", "docx", "txt"],
+                accept_multiple_files=True,
+                key="sec_filings_uploader"
+            )
+            if uploaded_sec:
+                if st.button("Process & Append SEC Reports", use_container_width=True):
+                    with st.spinner("Ingesting corporate reports..."):
+                        if run_in_memory_ingestion(uploaded_sec, clear_existing=False):
+                            st.success("Reports indexed successfully!")
+                            st.rerun()
+
+        # Overview of currently indexed filings
+        st.markdown("---")
+        st.subheader("Indexed Corporate Filings Overview")
+        if indexes_exist and retriever and retriever.chunks_lookup:
+            # Group chunks by doc_id
+            doc_groups = {}
+            for cid, cdata in retriever.chunks_lookup.items():
+                did = cdata.get("doc_id", "default")
+                if did not in doc_groups:
+                    doc_groups[did] = []
+                doc_groups[did].append(cdata)
+
+            filing_cards = []
+            for did, chunks in doc_groups.items():
+                first_meta = chunks[0]["metadata"]
+                ticker = first_meta.get("ticker", "GEN")
+                company = first_meta.get("company", "Company")
+                year = first_meta.get("fiscal_year", "N/A")
+                form = first_meta.get("form_type", "Document")
+                fname = first_meta.get("filename", "")
+                sections = sorted(list(set(c["metadata"].get("section", "BODY") for c in chunks)))
+
+                st.markdown(f"""
+                <div style="background-color: #121318; border: 2px solid #FFFFFF; padding: 16px; margin-bottom: 12px; box-shadow: 4px 4px 0px 0px #2563EB;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; font-size:1.1rem; color:#FFFFFF;">{company} ({ticker}) — {form} FY{year}</span>
+                        <span class="dept-badge" style="background-color:#38BDF8;">{len(chunks)} CHUNKS</span>
+                    </div>
+                    <div style="font-size:0.82rem; color:#A0A0A0; margin-top:6px; font-family:monospace;">
+                        File: {fname} | Identified Sections: {', '.join(sections)}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("No documents indexed yet. Click 'Load TEEP 2026 Sample 10-K Filings' above to initialize with benchmark data.")
+
+    # =========================================================================
+    # TAB 5: SEMANTIC SHIFT & NARRATIVE DRIFT (TEEP 2026 PRIMARY RESEARCH)
+    # =========================================================================
+    with tab_semantic_shift:
+        st.markdown("""
+        <div style="background-color: #121318; border: 3px solid #FFFFFF; padding: 20px; margin-bottom: 24px; box-shadow: 5px 5px 0px 0px #FFDE4D;">
+            <h3 style="color: #FFDE4D; margin-top: 0; font-weight: 700; font-family: 'Space Grotesk', sans-serif;">TEEP 2026: QUANTIFYING SEMANTIC SHIFTS & NARRATIVE DRIFT</h3>
+            <p style="font-size: 0.95rem; line-height: 1.6; color: #FFFFFF; opacity: 0.9; margin-bottom: 0;">
+                Empirical framework for measuring year-over-year textual displacement in corporate annual reports.
+                Calculates cosine embedding distances, Loughran-McDonald financial tone shifts, risk disclosure additions/deletions,
+                and synthesizes the composite <strong>Semantic Shift Index (S_shift)</strong> for predicting operating performance changes and excess returns.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not indexes_exist or not retriever:
+            st.warning("Please load or index annual reports first to conduct semantic shift analysis.")
+        else:
+            # Find companies with at least 2 filings/years
+            comp_years_map = {}
+            for cid, cdata in retriever.chunks_lookup.items():
+                meta = cdata.get("metadata", {})
+                comp = meta.get("company", "Unknown")
+                yr = str(meta.get("fiscal_year", "N/A"))
+                if comp != "Unknown" and yr != "N/A":
+                    if comp not in comp_years_map:
+                        comp_years_map[comp] = set()
+                    comp_years_map[comp].add(yr)
+
+            available_companies = [c for c, yrs in comp_years_map.items() if len(yrs) >= 2]
+            if not available_companies:
+                available_companies = list(comp_years_map.keys()) if comp_years_map else ["Apple Inc."]
+
+            col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+            with col_s1:
+                target_comp = st.selectbox("Select Target Company:", options=available_companies, index=0)
+            with col_s2:
+                sec_choice = st.selectbox("Filing Section to Analyze:", options=[
+                    "Item 1A (Risk Factors)",
+                    "Item 7 (MD&A)",
+                    "Item 1 (Business)",
+                    "Full Filing (Aggregate)"
+                ], index=0)
+            
+            comp_yrs_sorted = sorted(list(comp_years_map.get(target_comp, ["2023", "2024"])))
+            with col_s3:
+                year_t0 = st.selectbox("Base Year (t0):", options=comp_yrs_sorted, index=0)
+            with col_s4:
+                year_t1 = st.selectbox("Comparison Year (t1):", options=comp_yrs_sorted, index=min(1, len(comp_yrs_sorted)-1))
+
+            if st.button("Execute Multi-Dimensional Semantic Shift Analysis", use_container_width=True):
+                with st.spinner(f"Computing semantic drift for {target_comp} ({year_t0} -> {year_t1})..."):
+                    # Map section choice to code
+                    sec_code_map = {
+                        "Item 1A (Risk Factors)": "ITEM_1A",
+                        "Item 7 (MD&A)": "ITEM_7",
+                        "Item 1 (Business)": "ITEM_1",
+                        "Full Filing (Aggregate)": None
+                    }
+                    target_sec_code = sec_code_map[sec_choice]
+
+                    # Gather text chunks for t0 and t1
+                    text_t0_chunks = []
+                    text_t1_chunks = []
+                    for cid, cdata in retriever.chunks_lookup.items():
+                        meta = cdata.get("metadata", {})
+                        if meta.get("company") == target_comp:
+                            c_yr = str(meta.get("fiscal_year", ""))
+                            c_sec = meta.get("section", "").upper()
+                            
+                            if target_sec_code is None or target_sec_code in c_sec:
+                                if c_yr == str(year_t0):
+                                    text_t0_chunks.append(cdata["text"])
+                                elif c_yr == str(year_t1):
+                                    text_t1_chunks.append(cdata["text"])
+
+                    text_t0 = "\n\n".join(text_t0_chunks)
+                    text_t1 = "\n\n".join(text_t1_chunks)
+
+                    if not text_t0 or not text_t1:
+                        st.error(f"Insufficient text found for {target_comp} comparing {year_t0} and {year_t1}. Ensure both years are indexed.")
+                    else:
+                        analyzer = SemanticShiftAnalyzer(retriever.nlp)
+                        analysis = analyzer.analyze_reports(
+                            text_t0=text_t0,
+                            text_t1=text_t1,
+                            year_t0=str(year_t0),
+                            year_t1=str(year_t1),
+                            embedding_model=retriever.embedding_model,
+                            company_name=target_comp
+                        )
+
+                        # Render Key KPIs
+                        shift_val = analysis["composite_semantic_shift_index"]
+                        severity = analysis["shift_severity"]
+                        cos_dist = analysis["embedding_metrics"]["cosine_distance"]
+                        tone_delta = analysis["sentiment_metrics"]["deltas"]["net_tone_delta"]
+                        risk_count = analysis["risk_metrics"]["risk_expansion_count"]
+
+                        st.markdown("---")
+                        st.subheader(f"Quantified Drift Results: {target_comp} ({year_t0} vs {year_t1})")
+
+                        # KPI Cards Neo-Brutalist Grid
+                        st.markdown(f"""
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px;">
+                            <div style="background:#121318; border:3px solid #FFDE4D; padding:18px; box-shadow:4px 4px 0px 0px #FFDE4D;">
+                                <div style="font-size:0.75rem; text-transform:uppercase; font-weight:700; color:#A0A0A0;">Composite Shift Index</div>
+                                <div style="font-size:2.2rem; font-weight:700; color:#FFDE4D; font-family:monospace; margin:4px 0;">{shift_val}</div>
+                                <div style="font-size:0.8rem; font-weight:700; color:#FFFFFF;">{severity}</div>
+                            </div>
+                            <div style="background:#121318; border:3px solid #2563EB; padding:18px; box-shadow:4px 4px 0px 0px #2563EB;">
+                                <div style="font-size:0.75rem; text-transform:uppercase; font-weight:700; color:#A0A0A0;">Cosine Angular Distance</div>
+                                <div style="font-size:2.2rem; font-weight:700; color:#38BDF8; font-family:monospace; margin:4px 0;">{cos_dist}</div>
+                                <div style="font-size:0.8rem; font-weight:700; color:#FFFFFF;">Similarity: {analysis['embedding_metrics']['cosine_similarity']}</div>
+                            </div>
+                            <div style="background:#121318; border:3px solid #10B981; padding:18px; box-shadow:4px 4px 0px 0px #10B981;">
+                                <div style="font-size:0.75rem; text-transform:uppercase; font-weight:700; color:#A0A0A0;">Net Tone Drift (Delta)</div>
+                                <div style="font-size:2.2rem; font-weight:700; color:#10B981; font-family:monospace; margin:4px 0;">{tone_delta:+.4f}</div>
+                                <div style="font-size:0.8rem; font-weight:700; color:#FFFFFF;">Direction: {analysis['sentiment_metrics']['tone_drift_direction']}</div>
+                            </div>
+                            <div style="background:#121318; border:3px solid #F43F5E; padding:18px; box-shadow:4px 4px 0px 0px #F43F5E;">
+                                <div style="font-size:0.75rem; text-transform:uppercase; font-weight:700; color:#A0A0A0;">Net Risk Item Shift</div>
+                                <div style="font-size:2.2rem; font-weight:700; color:#F43F5E; font-family:monospace; margin:4px 0;">{risk_count:+d}</div>
+                                <div style="font-size:0.8rem; font-weight:700; color:#FFFFFF;">+{len(analysis['risk_metrics']['added_risks'])} New / -{len(analysis['risk_metrics']['removed_risks'])} Retired</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        # Loughran-McDonald Sentiment Breakdown
+                        col_sent1, col_sent2 = st.columns([1, 1])
+                        with col_sent1:
+                            st.markdown("#### Loughran-McDonald Lexicon Sentiment Shifts")
+                            sent_table = []
+                            for cat in ["negative", "positive", "uncertainty", "litigious", "constraining"]:
+                                s0 = analysis["sentiment_metrics"]["period_t0_scores"].get(cat, 0.0)
+                                s1 = analysis["sentiment_metrics"]["period_t1_scores"].get(cat, 0.0)
+                                d = analysis["sentiment_metrics"]["deltas"].get(f"{cat}_delta", 0.0)
+                                sent_table.append({
+                                    "Tone Category": cat.capitalize(),
+                                    f"FY{year_t0} (per 1k words)": s0,
+                                    f"FY{year_t1} (per 1k words)": s1,
+                                    "Tone Shift (Delta)": f"{d:+.3f}"
+                                })
+                            st.table(sent_table)
+
+                        with col_sent2:
+                            st.markdown("#### Lexical & Information Divergence")
+                            st.markdown(f"""
+                            - **Vocabulary Jaccard Distance**: `{analysis['vocabulary_metrics']['jaccard_distance']}`
+                            - **Jensen-Shannon Divergence (JSD)**: `{analysis['vocabulary_metrics']['jensen_shannon_divergence']}`
+                            - **Novel Terminology Introduction Rate**: `{analysis['vocabulary_metrics']['novel_term_ratio'] * 100:.1f}%`
+                            - **Risk Disclosure Retention Rate**: `{analysis['risk_metrics']['retention_rate'] * 100:.1f}%`
+                            """)
+                            st.markdown("""
+                            <div style="background:#1E1B4B; border:2px solid #FFFFFF; padding:14px; margin-top:10px;">
+                                <strong style="color:#FFDE4D;">Research Significance (TEEP 2026):</strong><br>
+                                <span style="font-size:0.85rem; color:#FFFFFF; opacity:0.9;">
+                                High linguistic divergence (JSD > 0.35) combined with negative tone escalation signifies non-routine corporate disclosure restructuring,
+                                which empirically anticipates heightened earnings volatility in subsequent quarters.
+                                </span>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        # Risk Factors Drift Detail
+                        st.markdown("---")
+                        st.subheader("Risk Disclosures Drift Analysis (Item 1A)")
+                        
+                        added_r = analysis["risk_metrics"]["added_risks"]
+                        mod_r = analysis["risk_metrics"]["modified_risks"]
+                        
+                        if added_r:
+                            st.markdown(f"**Newly Introduced Risk Factors in FY{year_t1} ({len(added_r)} detected):**")
+                            for ar in added_r:
+                                st.markdown(f"- 🔴 **[Novelty: {ar['novelty_score']:.2f}]** {ar['risk_text']}")
+
+                        if mod_r:
+                            st.markdown(f"**Significantly Modified / Reframed Disclosures ({len(mod_r)} detected):**")
+                            for mr in mod_r:
+                                with st.expander(f"Modified Risk (Similarity: {mr['similarity']:.2f})"):
+                                    st.markdown(f"**FY{year_t0} Prior Version:** {mr['prior_version']}")
+                                    st.markdown(f"**FY{year_t1} Current Version:** {mr['current_version']}")
+
+                        # Economic hypothesis summary
+                        st.markdown("---")
+                        st.markdown(f"""
+                        <div style="background-color: #050507; border: 3px solid #2563EB; padding: 18px; box-shadow: 4px 4px 0px 0px #FFDE4D; color: #FFFFFF;">
+                            <h4 style="color: #FFDE4D; margin-top: 0;">TEEP 2026 QUANTITATIVE FINANCE MODEL PREDICTION</h4>
+                            <p style="font-size: 0.95rem; line-height: 1.6; margin-bottom: 0;">
+                                {analysis['economic_hypothesis_summary']}
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+    # =========================================================================
+    # TAB 6: FINANCIAL METRICS EXTRACTION & SOURCE AUDIT
+    # =========================================================================
+    with tab_metrics:
+        st.markdown("""
+        <div style="background-color: #121318; border: 3px solid #FFFFFF; padding: 20px; margin-bottom: 24px; box-shadow: 5px 5px 0px 0px #2563EB;">
+            <h3 style="color: #FFDE4D; margin-top: 0; font-weight: 700; font-family: 'Space Grotesk', sans-serif;">FINANCIAL INFORMATION EXTRACTION & SOURCE TRACEABILITY</h3>
+            <p style="font-size: 0.95rem; line-height: 1.6; color: #FFFFFF; opacity: 0.9; margin-bottom: 0;">
+                Automated extraction of primary financial indicators (Revenue, Operating Income, Margins, Cash Flow, Debt).
+                Every figure is paired with an exact <strong>Chunk ID, SEC Section, and Verbatim Evidence Quote</strong>
+                and evaluated by the mathematical consistency validation engine.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not indexes_exist or not retriever:
+            st.warning("Please load or index annual reports to view extracted metrics.")
+        else:
+            extractor = FinancialMetricExtractor()
+            corpus_chunks = list(retriever.chunks_lookup.values())
+            extracted_records = extractor.extract_from_corpus(corpus_chunks)
+
+            if not extracted_records:
+                st.info("No standardized financial metrics were extracted. Ensure annual reports contain Income Statement / Balance Sheet disclosures.")
+            else:
+                # Group records by (ticker, fiscal_year)
+                companies_years = sorted(list(set((rec["ticker"], rec["fiscal_year"]) for rec in extracted_records.values())))
+                
+                # Selection row
+                c_sel1, c_sel2 = st.columns(2)
+                with c_sel1:
+                    sel_tick = st.selectbox("Select Company / Ticker:", options=sorted(list(set(cy[0] for cy in companies_years))), index=0)
+                
+                avail_yrs = sorted([cy[1] for cy in companies_years if cy[0] == sel_tick])
+                with c_sel2:
+                    sel_yr = st.selectbox("Select Fiscal Year:", options=avail_yrs, index=len(avail_yrs)-1)
+
+                # Filter records for selected company and year
+                current_metrics_dict = {
+                    rec["metric_key"]: rec["raw_value"]
+                    for rec in extracted_records.values()
+                    if rec["ticker"] == sel_tick and rec["fiscal_year"] == sel_yr
+                }
+
+                st.subheader(f"Extracted Indicators: {sel_tick} (FY{sel_yr})")
+                
+                # Display metrics table
+                table_rows = []
+                for rec in extracted_records.values():
+                    if rec["ticker"] == sel_tick and rec["fiscal_year"] == sel_yr:
+                        table_rows.append({
+                            "Financial Metric": rec["display_name"],
+                            "Category": rec["category"],
+                            "Extracted Value": rec["formatted_value"],
+                            "SEC Section": rec["section"],
+                            "Filing Source": rec["filename"],
+                            "Chunk ID": rec["chunk_id"]
+                        })
+
+                st.table(table_rows)
+
+                # Mathematical Sanity Engine Validations
+                st.markdown("---")
+                st.subheader("Mathematical Sanity & Accounting Equation Checks")
+                validations = extractor.validate_financial_consistency(current_metrics_dict)
+                
+                v_cols = st.columns(len(validations) if validations else 1)
+                for i, v in enumerate(validations):
+                    with v_cols[i]:
+                        status_color = "#10B981" if v["status"] in ["VALID", "COMPUTED"] else "#F43F5E"
+                        st.markdown(f"""
+                        <div style="background:#121318; border:2px solid {status_color}; padding:14px; box-shadow:3px 3px 0px 0px {status_color};">
+                            <div style="font-size:0.75rem; font-weight:700; color:{status_color};">{v['status']}</div>
+                            <div style="font-size:0.85rem; font-weight:700; color:#FFFFFF; margin:6px 0;">{v['rule']}</div>
+                            <div style="font-size:1.1rem; font-weight:700; color:#FFDE4D; font-family:monospace;">{v['calculated']}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                # Temporal Year-over-Year Comparison if multiple years exist
+                if len(avail_yrs) >= 2:
+                    st.markdown("---")
+                    st.subheader(f"Temporal YoY Metric Trajectory: {avail_yrs[0]} vs {avail_yrs[-1]}")
+                    m0 = {rec["metric_key"]: rec["raw_value"] for rec in extracted_records.values() if rec["ticker"] == sel_tick and rec["fiscal_year"] == avail_yrs[0]}
+                    m1 = {rec["metric_key"]: rec["raw_value"] for rec in extracted_records.values() if rec["ticker"] == sel_tick and rec["fiscal_year"] == avail_yrs[-1]}
+                    comp_table = extractor.compute_temporal_comparison(m0, m1, avail_yrs[0], avail_yrs[-1])
+                    
+                    if comp_table:
+                        yoy_rows = []
+                        for ct in comp_table:
+                            yoy_rows.append({
+                                "Metric": ct["display_name"],
+                                f"FY{avail_yrs[0]}": f"${ct['value_t0']:,.0f}" if ct['value_t0'] > 100 else f"${ct['value_t0']:.2f}",
+                                f"FY{avail_yrs[-1]}": f"${ct['value_t1']:,.0f}" if ct['value_t1'] > 100 else f"${ct['value_t1']:.2f}",
+                                "Dollar Delta": f"${ct['delta_abs']:+,.0f}" if abs(ct['delta_abs']) > 100 else f"${ct['delta_abs']:+.2f}",
+                                "Growth (%)": f"{ct['growth_pct']:+.2f}%",
+                                "Trajectory": ct["trend"]
+                            })
+                        st.table(yoy_rows)
+
+                # Verbatim Source Audit Trail
+                st.markdown("---")
+                with st.expander("Verbatim Evidence Quotes & Citation Audit Trail", expanded=False):
+                    for rec in extracted_records.values():
+                        if rec["ticker"] == sel_tick and rec["fiscal_year"] == sel_yr:
+                            st.markdown(f"**{rec['display_name']} ({rec['formatted_value']})** — Section: `{rec['section']}` | Chunk: `{rec['chunk_id']}`")
+                            st.markdown(f"> *\"{rec['evidence_quote']}\"*")
+                            st.markdown("")
+
+    # =========================================================================
+    # TAB 7: EVIDENCE-GROUNDED FINANCIAL Q&A
+    # =========================================================================
+    with tab_qa:
+        st.markdown("""
+        <div style="background-color: #121318; border: 3px solid #FFFFFF; padding: 20px; margin-bottom: 24px; box-shadow: 5px 5px 0px 0px #FFDE4D;">
+            <h3 style="color: #FFDE4D; margin-top: 0; font-weight: 700; font-family: 'Space Grotesk', sans-serif;">EVIDENCE-GROUNDED FINANCIAL Q&A & RESEARCH DOSSIER</h3>
+            <p style="font-size: 0.95rem; line-height: 1.6; color: #FFFFFF; opacity: 0.9; margin-bottom: 0;">
+                Audited answers with full evidence grounding. Outputs strictly segregate
+                <strong>Extracted Facts (Verified Disclosures)</strong> from <strong>Analytical Interpretations (Temporal Observations)</strong>
+                with clickable section-level citations and exportable research dossiers.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not indexes_exist or not retriever:
+            st.warning("Please index documents to use the Financial Q&A engine.")
+        else:
+            qa_engine = EvidenceGroundedFinancialQA(retriever)
+
+            # Suggested Research Prompts
+            sample_fin_prompts = [
+                "How did Apple's operating margin change from FY2023 to FY2024 and what were the primary MD&A drivers?",
+                "What new risk factors related to artificial intelligence and regulations did Apple and Microsoft disclose?",
+                "Compare Microsoft's capital expenditures and cloud revenue growth between 2023 and 2024."
+            ]
+            
+            st.markdown("**Sample TEEP 2026 Research Queries:**")
+            p_cols = st.columns(len(sample_fin_prompts))
+            for i, p_txt in enumerate(sample_fin_prompts):
+                if p_cols[i].button(p_txt, key=f"fin_prompt_{i}", use_container_width=True):
+                    st.session_state["fin_query"] = p_txt
+                    st.rerun()
+
+            if "fin_query" not in st.session_state:
+                st.session_state["fin_query"] = sample_fin_prompts[0]
+
+            qa_query = st.text_input("Enter financial query:", value=st.session_state["fin_query"])
+
+            if st.button("Generate Evidence-Grounded Analysis", use_container_width=True) and qa_query:
+                with st.spinner("Retrieving annual report evidence and synthesizing grounded response..."):
+                    qa_response = qa_engine.analyze_and_answer(
+                        query=qa_query,
+                        company=selected_company,
+                        years=[selected_year] if selected_year != "All" else None,
+                        section=selected_sec,
+                        top_k=5
+                    )
+
+                    # 1. Facts Section Card
+                    st.markdown("---")
+                    st.markdown("""
+                    <div style="background-color:#121318; border-left:6px solid #10B981; border:2px solid #FFFFFF; border-left-width:8px; padding:18px; margin-bottom:18px; box-shadow:4px 4px 0px 0px #10B981;">
+                        <h4 style="color:#10B981; margin-top:0; font-family:'Space Grotesk', sans-serif;">EXTRACTED FACTS (DIRECT FILING DISCLOSURES)</h4>
+                    """, unsafe_allow_html=True)
+
+                    if qa_response["facts"]:
+                        for fact in qa_response["facts"]:
+                            st.markdown(f"- **{fact['statement']}** &nbsp; <span style='font-size:0.75rem; background:#38BDF8; color:#000; padding:2px 6px; font-weight:700;'>{fact['citation_tag']}</span>", unsafe_allow_html=True)
+                    else:
+                        st.write("No direct numerical or policy statements matched.")
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    # 2. Analytical Interpretations Card
+                    st.markdown("""
+                    <div style="background-color:#121318; border-left:6px solid #FFDE4D; border:2px solid #FFFFFF; border-left-width:8px; padding:18px; margin-bottom:18px; box-shadow:4px 4px 0px 0px #FFDE4D;">
+                        <h4 style="color:#FFDE4D; margin-top:0; font-family:'Space Grotesk', sans-serif;">ANALYTICAL INTERPRETATIONS & TEMPORAL SYNTHESIS</h4>
+                    """, unsafe_allow_html=True)
+
+                    for interp in qa_response["interpretations"]:
+                        st.markdown(f"• **{interp['observation']}**")
+                        st.caption(f"Methodological Basis: {interp['basis']}")
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    # 3. Citation Footnotes
+                    st.subheader("Verifiable Source Citations")
+                    for cit in qa_response["citations"]:
+                        st.markdown(f"- **{cit['label']}** — Filing: `{cit['filename']}` | Chunk ID: `{cit['chunk_id']}` | Cross-Encoder Score: `{cit['rerank_score']}`")
+
+                    # Export Dossier
+                    st.markdown("---")
+                    dossier_json = json.dumps(qa_response, indent=2, default=str)
+                    st.download_button(
+                        label="Download Research Dossier (JSON)",
+                        data=dossier_json,
+                        file_name="TEEP2026_Research_Dossier.json",
+                        mime="application/json"
+                    )
+
+    # =========================================================================
+    # TAB 8: RESEARCH EVALUATION & ABLATIONS
+    # =========================================================================
+    with tab_eval:
+        st.markdown("""
+        <div style="background-color: #121318; border: 3px solid #FFFFFF; padding: 20px; margin-bottom: 24px; box-shadow: 5px 5px 0px 0px #2563EB;">
+            <h3 style="color: #FFDE4D; margin-top: 0; font-weight: 700; font-family: 'Space Grotesk', sans-serif;">RESEARCH EVALUATION & ABLATION SUITE (TEEP 2026)</h3>
+            <p style="font-size: 0.95rem; line-height: 1.6; color: #FFFFFF; opacity: 0.9; margin-bottom: 0;">
+                Benchmarking retrieval performance with Mean Reciprocal Rank (MRR), NDCG@k, Precision@k,
+                and multi-stage ablation experiments. Prepares domain-specific fine-tuning datasets and configurations for LoRA / Unsloth.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not indexes_exist or not retriever:
+            st.warning("Please index documents to run evaluation benchmarks.")
+        else:
+            evaluator = ResearchEvaluator(retriever)
+
+            # Benchmark Queries
+            benchmark_queries = [
+                {"query": "Apple operating income and revenue for fiscal year 2024", "relevant_keywords": ["391,035", "123,216", "operating income", "net sales"]},
+                {"query": "Artificial intelligence risk factors and regulatory scrutiny", "relevant_keywords": ["artificial intelligence", "DMA", "generative models", "risk"]},
+                {"query": "Microsoft Cloud revenue and capital expenditures datacenter", "relevant_keywords": ["44,477", "137 billion", "Intelligent Cloud", "capital expenditures"]},
+                {"query": "Free cash flow and operating activities cash flow", "relevant_keywords": ["operating activities", "free cash flow", "property, plant and equipment"]}
+            ]
+
+            col_e1, col_e2 = st.columns([1, 1])
+            with col_e1:
+                st.markdown("#### Retrieval Performance Evaluation")
+                if st.button("Run IR Benchmark Suite", use_container_width=True):
+                    with st.spinner("Evaluating retrieval metrics across benchmark queries..."):
+                        eval_results = evaluator.evaluate_retrieval_benchmark(benchmark_queries)
+                        summary = eval_results["summary"]
+                        
+                        st.markdown(f"""
+                        <div style="background:#121318; border:2px solid #10B981; padding:16px; margin:12px 0;">
+                            <div style="font-weight:700; color:#10B981; margin-bottom:8px;">BENCHMARK SUMMARY ({summary['num_test_queries']} Test Queries)</div>
+                            <div>• <strong>Mean Reciprocal Rank (MRR)</strong>: <code>{summary['mean_mrr']}</code></div>
+                            <div>• <strong>Mean NDCG@3</strong>: <code>{summary['mean_ndcg@3']}</code> | <strong>NDCG@5</strong>: <code>{summary['mean_ndcg@5']}</code></div>
+                            <div>• <strong>Mean Precision@5</strong>: <code>{summary['mean_precision@5']}</code> | <strong>Recall@5</strong>: <code>{summary['mean_recall@5']}</code></div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+            with col_e2:
+                st.markdown("#### Multi-Stage Ablation Studies")
+                if st.button("Run Multi-Stage Ablation Experiments", use_container_width=True):
+                    with st.spinner("Conducting comparative ablations (Sparse vs Dense vs Graph vs RRF vs Cross-Encoder)..."):
+                        sample_qs = [b["query"] for b in benchmark_queries]
+                        ablations = evaluator.run_ablation_study(sample_qs, top_k=5)
+                        
+                        st.table(ablations)
+                        st.caption("Relative gain is measured relative to the BM25 Sparse baseline.")
+
+            # Fine-tuning preparation box
+            st.markdown("---")
+            st.subheader("Domain-Specific Model Fine-Tuning Readiness (LoRA / Unsloth)")
+            st.markdown("""
+            Generate instruction-tuning datasets in Alpaca or ChatML format from your indexed annual reports
+            and generate ready-to-run parameter-efficient fine-tuning (QLoRA) training scripts.
+            """)
+
+            col_ft1, col_ft2 = st.columns(2)
+            with col_ft1:
+                if st.button("Export RAG Chunks to Alpaca Dataset", use_container_width=True):
+                    preparer = FinancialFineTuningPreparer()
+                    out_path = preparer.generate_instruction_dataset(list(retriever.chunks_lookup.values()), format_type="alpaca")
+                    st.success(f"Generated Alpaca dataset: {out_path}")
+            
+            with col_ft2:
+                if st.button("Generate QLoRA / Unsloth Training Script", use_container_width=True):
+                    preparer = FinancialFineTuningPreparer()
+                    script_path = preparer.generate_unsloth_training_script()
+                    st.success(f"Generated training script: {script_path}")
+

@@ -22,3 +22,8 @@ env/
 
 # Streamlit secrets
 .streamlit/secrets.toml
+
+# Testing & Benchmarks
+.pytest_cache/
+benchmarks/
+

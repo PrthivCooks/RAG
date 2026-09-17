@@ -3,12 +3,12 @@ import hashlib
 from pathlib import Path
 from typing import List, Dict, Any
 from utils.helpers import extract_document_text, extract_metadata
-from utils.chunking import semantic_chunking, recursive_chunking, hierarchical_chunking
+from utils.chunking import semantic_chunking, recursive_chunking, hierarchical_chunking, financial_section_aware_chunking
 
 class DocumentProcessor:
     """
     Orchestrates the loading, text extraction, metadata extraction,
-    and custom chunking of enterprise documents.
+    and custom chunking of enterprise and SEC annual report documents.
     """
     def __init__(self, embedding_model, spacy_nlp):
         self.embedding_model = embedding_model
@@ -29,6 +29,7 @@ class DocumentProcessor:
         """
         Process a single file: extract text, extract metadata, chunk it,
         and build structured chunk objects.
+        Automatically utilizes SEC Section-Aware chunking for financial reports.
         """
         text = extract_document_text(file_path)
         if not text.strip():
@@ -41,9 +42,37 @@ class DocumentProcessor:
         
         processed_chunks = []
         
+        # Route SEC annual reports to section-aware chunker
+        if meta.get("is_financial_report", False):
+            fin_chunks = financial_section_aware_chunking(
+                text=text,
+                embedding_model=self.embedding_model,
+                spacy_nlp=self.spacy_nlp,
+                chunk_size=chunk_size,
+                chunk_overlap=chunk_overlap,
+                use_hierarchical=use_hierarchical,
+                use_semantic=use_semantic
+            )
+            for idx, item in enumerate(fin_chunks):
+                chunk_uuid = str(uuid.uuid4())
+                chunk_metadata = meta.copy()
+                chunk_metadata["chunk_index"] = idx
+                chunk_metadata["doc_id"] = doc_id
+                chunk_metadata["section"] = item.get("section_code", "GENERAL")
+                chunk_metadata["section_title"] = item.get("section_title", "General")
+                
+                processed_chunks.append({
+                    "chunk_id": chunk_uuid,
+                    "doc_id": doc_id,
+                    "text": item["child_text"],
+                    "parent_text": item["parent_text"],
+                    "parent_index": item["parent_index"],
+                    "metadata": chunk_metadata
+                })
+            return processed_chunks
+
+        # Standard non-financial corporate document processing (fully preserved)
         if use_hierarchical:
-            # We construct parent-child relationships. 
-            # Parent size is roughly 4x child size for broader context.
             parent_size = chunk_size * 4
             parent_overlap = chunk_overlap * 4
             
@@ -63,6 +92,8 @@ class DocumentProcessor:
                 chunk_metadata = meta.copy()
                 chunk_metadata["chunk_index"] = idx
                 chunk_metadata["doc_id"] = doc_id
+                chunk_metadata["section"] = "BODY"
+                chunk_metadata["section_title"] = "General Content"
                 
                 processed_chunks.append({
                     "chunk_id": chunk_uuid,
@@ -93,6 +124,8 @@ class DocumentProcessor:
                 chunk_metadata = meta.copy()
                 chunk_metadata["chunk_index"] = idx
                 chunk_metadata["doc_id"] = doc_id
+                chunk_metadata["section"] = "BODY"
+                chunk_metadata["section_title"] = "General Content"
                 
                 processed_chunks.append({
                     "chunk_id": chunk_uuid,

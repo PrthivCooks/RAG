@@ -243,3 +243,80 @@ def hierarchical_chunking(
                 })
                 
     return hierarchical_chunks
+
+def financial_section_aware_chunking(
+    text: str,
+    embedding_model,
+    spacy_nlp,
+    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
+    use_hierarchical: bool = True,
+    use_semantic: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    SEC Section-Aware Chunker for corporate annual reports.
+    1. Segments text into SEC Items (Item 1, 1A, 7, 8, etc.) to prevent cross-section contamination.
+    2. Performs hierarchical or semantic chunking WITHIN each section.
+    3. Annotates each chunk with section code and title for strict auditability and retrieval filtering.
+    """
+    from utils.helpers import segment_sec_sections
+
+    sections = segment_sec_sections(text)
+    annotated_chunks = []
+
+    for sec in sections:
+        sec_code = sec["code"]
+        sec_title = sec["title"]
+        sec_body = sec["text"]
+
+        if not sec_body.strip():
+            continue
+
+        if use_hierarchical:
+            parent_size = chunk_size * 4
+            parent_overlap = chunk_overlap * 4
+            sec_hier_chunks = hierarchical_chunking(
+                text=sec_body,
+                embedding_model=embedding_model,
+                spacy_nlp=spacy_nlp,
+                parent_size=parent_size,
+                parent_overlap=parent_overlap,
+                child_size=chunk_size,
+                child_overlap=chunk_overlap,
+                use_semantic=use_semantic
+            )
+            for item in sec_hier_chunks:
+                annotated_chunks.append({
+                    "child_text": f"[{sec_code}: {sec_title}]\n" + item["child_text"],
+                    "parent_text": f"[{sec_code}: {sec_title}]\n" + item["parent_text"],
+                    "parent_index": item["parent_index"],
+                    "section_code": sec_code,
+                    "section_title": sec_title
+                })
+        else:
+            if use_semantic:
+                raw_chunks = semantic_chunking(
+                    text=sec_body,
+                    embedding_model=embedding_model,
+                    spacy_nlp=spacy_nlp,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap
+                )
+            else:
+                raw_chunks = recursive_chunking(
+                    text=sec_body,
+                    chunk_size=chunk_size,
+                    chunk_overlap=chunk_overlap
+                )
+
+            for idx, c_text in enumerate(raw_chunks):
+                annotated_chunks.append({
+                    "child_text": f"[{sec_code}: {sec_title}]\n" + c_text,
+                    "parent_text": f"[{sec_code}: {sec_title}]\n" + c_text,
+                    "parent_index": idx,
+                    "section_code": sec_code,
+                    "section_title": sec_title
+                })
+
+    return annotated_chunks
+

@@ -1,0 +1,41 @@
+COMPANY NAME: Apple Inc.
+TICKER: AAPL
+FORM TYPE: Form 10-K
+FISCAL YEAR: 2024
+PERIOD ENDED: September 28, 2024
+EXACT NAME OF REGISTRANT AS SPECIFIED IN ITS CHARTER: Apple Inc.
+
+PART I
+
+Item 1. Business
+Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories, and sells a variety of related services. In fiscal 2024, the Company introduced Apple Intelligence, a personal intelligence system integrated deeply into iOS, iPadOS, and macOS that combines generative models with personal context. The Company's hardware ecosystem is powered by proprietary Apple Silicon (M3 and M4 chips and A18 Pro). Services revenue grew to historic levels across Cloud Services, App Store, Apple Music, and Apple Pay. While manufacturing assembly remains concentrated in Asia, the Company has actively accelerated operational diversification of its supply chain into India and Vietnam to enhance manufacturing resilience.
+
+Item 1A. Risk Factors
+The Company’s business, reputation, results of operations and financial condition are subject to evolving risks:
+• NEW RISK DISCLOSURE: The rapid development and commercial deployment of artificial intelligence (AI) and generative models introduce new operational, ethical, intellectual property, and cybersecurity risks. If the Company’s AI offerings fail to meet customer expectations, generate inaccurate outputs, or breach privacy commitments, the Company’s competitive standing and brand value could be materially impaired.
+• NEW REGULATORY DISCLOSURE: Compliance with the European Union's Digital Markets Act (DMA) has required significant modifications to iOS, Safari, and the App Store in the EU, including enabling alternative app marketplaces and alternative payment processing. These mandated operational changes could reduce the Company's services margin and increase exposure to malicious software.
+• The Company continues to depend on global supply chains and single-source component vendors. Geopolitical instability, cross-strait trade frictions, and export control regulations affecting advanced semiconductor manufacturing equipment could curtail production capacity.
+• Global macroeconomic conditions, currency exchange rate fluctuations, and inflationary pressures continue to influence consumer demand for consumer electronics.
+• Intense competition persists across all business categories, requiring substantial ongoing investments in software engineering, advanced display technologies, and machine learning architectures.
+
+PART II
+
+Item 7. Management's Discussion and Analysis of Financial Condition and Results of Operations (MD&A)
+Total net sales were $391,035 million in fiscal 2024, compared to $383,285 million in fiscal 2023, an increase of $7,750 million or 2.0%. Net sales growth was driven by record Services revenue of $96,169 million and higher iPhone sales following the launch of the iPhone 16 family, partially offset by foreign exchange headwinds. Cost of sales was $210,352 million in fiscal 2024, compared to $214,137 million in fiscal 2023. Gross profit increased to $180,683 million, expanding gross margin to 46.2% from 44.1% in the prior year.
+Operating income was $123,216 million in fiscal 2024, compared to $114,301 million in fiscal 2023, representing an expansion in operating margin to 31.5% from 29.8%. Net income was $93,736 million, which included the impact of a one-time tax charge of $10.2 billion associated with the European Court of Justice State Aid judgment. Diluted earnings per share was $6.08 per share.
+Research and development expense reached $31,370 million, reflecting heightened investment in artificial intelligence technologies, generative models, and next-generation Apple Silicon.
+Net cash provided by operating activities was $118,254 million in fiscal 2024, up from $110,543 million in fiscal 2023. Payments for property, plant and equipment (capital expenditures) were $9,451 million, yielding free cash flow of $108,803 million. The Company closed fiscal 2024 with total debt of $106,629 million and cash and cash equivalents and marketable securities of $156,650 million.
+
+Item 8. Consolidated Financial Statements
+Consolidated Statements of Operations:
+Total net sales: $391,035 million
+Cost of sales: $210,352 million
+Gross profit: $180,683 million
+Operating income: $123,216 million
+Net income: $93,736 million
+Diluted earnings per share: $6.08 per share
+Diluted shares: 15,408,000 thousand
+Operating cash flow: $118,254 million
+Capital expenditures: $9,451 million
+Total debt: $106,629 million
+Cash and cash equivalents: $156,650 million

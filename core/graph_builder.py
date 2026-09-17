@@ -39,7 +39,7 @@ class GraphBuilder:
         }
 
         # Extract NER entities
-        allowed_types = {"ORG", "PERSON", "GPE", "LOC", "PRODUCT", "DATE", "LAW"}
+        allowed_types = {"ORG", "PERSON", "GPE", "LOC", "PRODUCT", "DATE", "LAW", "MONEY", "PERCENT"}
         for ent in doc.ents:
             cleaned_name = self.clean_entity_name(ent.text)
             if not cleaned_name:
@@ -59,6 +59,35 @@ class GraphBuilder:
                         "name": cleaned_name,
                         "type": ent.label_
                     })
+
+        # --- FINANCIAL DOMAIN ENTITY AUGMENTATION ---
+        # Detect Financial Metrics & Key Financial Concepts
+        fin_concept_rules = {
+            "REVENUE": ["revenue", "net sales", "total revenue", "operating revenue"],
+            "OPERATING_INCOME": ["operating income", "operating profit", "ebit"],
+            "NET_INCOME": ["net income", "net earnings", "net profit"],
+            "MARGIN": ["operating margin", "gross margin", "net margin"],
+            "CASH_FLOW": ["operating cash flow", "free cash flow", "capital expenditures", "capex"],
+            "DEBT": ["total debt", "commercial paper", "term debt"],
+            "RISK_TOPIC": [
+                "supply chain", "cybersecurity", "intellectual property",
+                "antitrust", "regulatory compliance", "foreign exchange",
+                "macroeconomic conditions", "artificial intelligence", "data privacy"
+            ]
+        }
+        
+        text_lower = text.lower()
+        for concept_type, phrases in fin_concept_rules.items():
+            for phrase in phrases:
+                if re.search(r'\b' + re.escape(phrase) + r'\b', text_lower):
+                    phrase_display = phrase.title()
+                    ent_key = (phrase_display.lower(), concept_type)
+                    if ent_key not in seen_entities:
+                        seen_entities.add(ent_key)
+                        entities.append({
+                            "name": phrase_display,
+                            "type": concept_type
+                        })
 
         relations = []
         # SVO extraction logic
@@ -84,7 +113,6 @@ class GraphBuilder:
                     # Resolve compound nouns (e.g. "Vendor" + "XYZ" -> "Vendor XYZ")
                     def get_compound(token):
                         parts = []
-                        # Look at left and right children for compounds
                         for left in token.lefts:
                             if left.dep_ == "compound":
                                 parts.append(left.text)
@@ -104,7 +132,7 @@ class GraphBuilder:
                         not re.match(r'^[\d\W]+$', subj_text) and not re.match(r'^[\d\W]+$', obj_text)):
                         relations.append((subj_text, relation_text, obj_text))
 
-        # Add co-occurrence relations for entities in the same sentence if no SVO relations found
+        # Add co-occurrence relations for entities in the same sentence
         for sent in doc.sents:
             s_ents = [self.clean_entity_name(e.text) for e in sent.ents if e.label_ in allowed_types]
             s_ents = list(set([
@@ -121,11 +149,20 @@ class GraphBuilder:
     def add_chunk_to_graph(self, chunk_id: str, text: str, doc_metadata: dict):
         """
         Extract entities/relations from chunk and construct/update the NetworkX Graph.
+        Attaches financial metadata (ticker, year, section) when available.
         """
         entities, relations = self.extract_entities_and_relations(text)
         
-        # Add the chunk node
-        self.graph.add_node(chunk_id, type="chunk", doc_id=doc_metadata.get("doc_id", ""), filename=doc_metadata.get("filename", ""))
+        # Add the chunk node with rich metadata
+        self.graph.add_node(
+            chunk_id, 
+            type="chunk", 
+            doc_id=doc_metadata.get("doc_id", ""), 
+            filename=doc_metadata.get("filename", ""),
+            ticker=doc_metadata.get("ticker", "N/A"),
+            fiscal_year=doc_metadata.get("fiscal_year", "N/A"),
+            section=doc_metadata.get("section", "BODY")
+        )
         
         # Add entities as nodes and link to the chunk
         for ent in entities:

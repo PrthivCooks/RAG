@@ -1,0 +1,41 @@
+COMPANY NAME: Apple Inc.
+TICKER: AAPL
+FORM TYPE: Form 10-K
+FISCAL YEAR: 2023
+PERIOD ENDED: September 30, 2023
+EXACT NAME OF REGISTRANT AS SPECIFIED IN ITS CHARTER: Apple Inc.
+
+PART I
+
+Item 1. Business
+Apple Inc. designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories, and sells a variety of related services. The Company's fiscal year is the 52- or 53-week period that ends on the last Saturday of September. The Company's products include iPhone, Mac, iPad, and Wearables, Home and Accessories. Services includes Advertising, AppleCare, Cloud Services, Digital Content, and Payment Services. The Company’s products and services are distributed through its retail stores, online stores, direct sales force, third-party cellular network carriers, wholesalers, and retailers. Substantially all of the Company's manufacturing is performed by outsourced partners located primarily in Asia, with significant assembly operations concentrated in Greater China.
+
+Item 1A. Risk Factors
+The Company’s business, reputation, results of operations and financial condition can be adversely affected by several key risk factors:
+• Global and regional economic conditions, including inflation, interest rate fluctuations, and currency volatility, could adversely impact consumer and business spending for the Company’s premium hardware products.
+• The Company depends on component suppliers and outsourced manufacturing partners located primarily in Greater China. Political tensions, trade disputes, tariffs, or natural disasters in the region could cause severe supply chain disruptions and delay product deliveries.
+• The Company faces intense competition in global technology markets characterized by rapid technological advances, frequent product introductions, and aggressive price competition from low-cost competitors.
+• The Company is subject to complex and evolving laws and regulations worldwide regarding data privacy, intellectual property, competition law, and consumer protection. Ongoing antitrust investigations in the United States and the European Union regarding the App Store could mandate changes to the Company's commercial terms.
+• Failure to protect the Company's proprietary intellectual property or defending against third-party infringement claims could impose substantial litigation costs and restrict product distribution.
+
+PART II
+
+Item 7. Management's Discussion and Analysis of Financial Condition and Results of Operations (MD&A)
+Total net sales were $383,285 million in fiscal 2023, compared to $394,328 million in fiscal 2022, representing a decrease of 2.8%. The decrease in net sales was primarily driven by lower sales of Mac and iPad hardware, partially offset by record net sales in Services. Cost of sales was $214,137 million in fiscal 2023, compared to $223,546 million in fiscal 2022. Gross profit was $169,148 million, yielding a gross margin of 44.1%. 
+Operating income was $114,301 million in fiscal 2023, compared to $119,437 million in fiscal 2022, resulting in an operating margin of 29.8%. Net income was $96,995 million in fiscal 2023, and diluted earnings per share was $6.13 per share.
+Research and development expense was $29,915 million, reflecting continued investment in proprietary silicon, software architectures, and display technologies.
+Net cash provided by operating activities was $110,543 million in fiscal 2023. Payments for property, plant and equipment (capital expenditures) were $10,959 million, generating free cash flow of $99,584 million. The Company ended fiscal 2023 with total debt of $111,088 million and cash and cash equivalents and marketable securities of $162,099 million.
+
+Item 8. Consolidated Financial Statements
+Consolidated Statements of Operations:
+Total net sales: $383,285 million
+Cost of sales: $214,137 million
+Gross profit: $169,148 million
+Operating income: $114,301 million
+Net income: $96,995 million
+Diluted earnings per share: $6.13 per share
+Diluted shares: 15,812,547 thousand
+Operating cash flow: $110,543 million
+Capital expenditures: $10,959 million
+Total debt: $111,088 million
+Cash and cash equivalents: $162,099 million

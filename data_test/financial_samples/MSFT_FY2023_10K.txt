@@ -1,0 +1,41 @@
+COMPANY NAME: Microsoft Corporation
+TICKER: MSFT
+FORM TYPE: Form 10-K
+FISCAL YEAR: 2023
+PERIOD ENDED: June 30, 2023
+EXACT NAME OF REGISTRANT AS SPECIFIED IN ITS CHARTER: Microsoft Corporation
+
+PART I
+
+Item 1. Business
+Microsoft Corporation is a technology provider enabling digital transformation for the era of an intelligent cloud and an intelligent edge. Our mission is to empower every person and every organization on the planet to achieve more. We offer a wide range of services, including cloud-based solutions that provide customers with software, services, platforms, and content. Our segments are Productivity and Business Processes, Intelligent Cloud, and More Personal Computing. In fiscal year 2023, Microsoft began integrating generative artificial intelligence across our product portfolio through our partnership with OpenAI, deploying Microsoft Copilot across Microsoft 365, GitHub, and Dynamics 365.
+
+Item 1A. Risk Factors
+Key risk factors confronting Microsoft include:
+• Intense competition in cloud computing and software infrastructure from hyperscale competitors like Amazon Web Services and Google Cloud.
+• Significant investments in commercial artificial intelligence and large language models may not generate anticipated returns or may expose the company to unexpected computational infrastructure costs.
+• Cybersecurity threats and sophisticated cyberattacks on cloud services and enterprise infrastructure could lead to data theft, operational downtime, and severe regulatory penalties.
+• Regulatory scrutiny regarding digital platform dominance, software bundling, and proposed acquisitions such as Activision Blizzard.
+• Foreign exchange headwinds and macroeconomic slowdown affecting commercial PC sales and IT budget spending.
+
+PART II
+
+Item 7. Management's Discussion and Analysis of Financial Condition and Results of Operations (MD&A)
+In fiscal year 2023, total revenue was $211,915 million, compared to $198,270 million in fiscal year 2022, an increase of 7%. Cost of revenue was $65,863 million, yielding gross profit of $146,052 million with a gross margin of 68.9%.
+Operating income was $88,523 million, compared to $83,383 million in fiscal year 2022, representing an operating margin of 41.8%.
+Net income was $72,361 million, and diluted earnings per share was $9.68 per share.
+Microsoft Cloud revenue exceeded $110 billion for the first time, up 22% year-over-year.
+Cash flow from operations was $87,582 million. Capital expenditures for property and equipment, driven by cloud datacenter buildouts, were $28,107 million, yielding free cash flow of $59,475 million. Total debt was $59,965 million, and cash, cash equivalents, and short-term investments totaled $111,262 million.
+
+Item 8. Consolidated Financial Statements
+Consolidated Statements of Income:
+Total revenue: $211,915 million
+Cost of revenue: $65,863 million
+Gross profit: $146,052 million
+Operating income: $88,523 million
+Net income: $72,361 million
+Diluted earnings per share: $9.68 per share
+Operating cash flow: $87,582 million
+Capital expenditures: $28,107 million
+Total debt: $59,965 million
+Cash and cash equivalents: $111,262 million

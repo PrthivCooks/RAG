@@ -171,25 +171,47 @@ class HybridRetriever:
                             
         return list(set(walks))[:3]
 
+    def expand_financial_query(self, query: str) -> List[str]:
+        """
+        Expands financial queries with SEC domain synonyms and related accounting metrics.
+        """
+        from config import FINANCIAL_QUERY_EXPANSION
+        expanded_terms = set()
+        query_lower = query.lower()
+        for term, synonyms in FINANCIAL_QUERY_EXPANSION.items():
+            if term in query_lower:
+                expanded_terms.update(synonyms[:2])
+        return list(expanded_terms)
+
     def search(
         self, 
         query: str, 
         k: int = FINAL_TOP_K, 
         alpha: float = None, 
         department_filter: str = None,
+        company_filter: str = None,
+        year_filter: Any = None,
+        section_filter: str = None,
         use_decomposition: bool = True,
-        use_parent_retrieval: bool = True
+        use_parent_retrieval: bool = True,
+        enable_financial_expansion: bool = False
     ) -> Dict[str, Any]:
         """
-        Executes hybrid search pipeline with optional Query Decomposition and Parent-Child retrieval.
+        Executes hybrid search pipeline with optional Query Decomposition, Parent-Child retrieval,
+        financial domain query expansion, and multi-dimensional corporate/temporal metadata filtering.
         """
         # Ensure indexes are loaded
         if not self.chunks_lookup:
             if not self.load_indexes():
                 return {"results": [], "summary": "Indexes not loaded. Please index documents first.", "see_also": []}
 
-        # --- 1. LINGUISTIC QUERY DECOMPOSITION ---
+        # --- 1. LINGUISTIC QUERY DECOMPOSITION & FINANCIAL EXPANSION ---
         sub_queries = self.decompose_query(query) if use_decomposition else [query]
+        if enable_financial_expansion:
+            fin_terms = self.expand_financial_query(query)
+            for ft in fin_terms:
+                if ft not in sub_queries:
+                    sub_queries.append(ft)
 
         sparse_accum = {}
         dense_accum = {}
@@ -241,7 +263,7 @@ class HybridRetriever:
 
         fused_candidates = reciprocal_rank_fusion(retrieval_runs, weights=weights, k=RRF_K)
 
-        # --- 3. DEDUPLICATION & PARENT CONTEXT EXPANSION ---
+        # --- 3. DEDUPLICATION & FINANCIAL METADATA FILTERING ---
         seen_parents = set()
         candidate_chunks = []
         
@@ -251,10 +273,37 @@ class HybridRetriever:
             if not chunk_data:
                 continue
 
+            chunk_meta = chunk_data.get("metadata", {})
+
             # Apply department filter
             if department_filter and department_filter != "All":
-                chunk_dept = chunk_data["metadata"].get("department", "General")
+                chunk_dept = chunk_meta.get("department", "General")
                 if chunk_dept.lower() != department_filter.lower():
+                    continue
+
+            # Apply company / ticker filter
+            if company_filter and company_filter != "All":
+                c_comp = chunk_meta.get("company", "").lower()
+                c_tick = chunk_meta.get("ticker", "").lower()
+                target = company_filter.lower()
+                if target not in c_comp and target != c_tick:
+                    continue
+
+            # Apply fiscal year filter
+            if year_filter and year_filter != "All":
+                c_year = str(chunk_meta.get("fiscal_year", ""))
+                if isinstance(year_filter, (list, tuple)):
+                    if c_year not in [str(y) for y in year_filter]:
+                        continue
+                elif c_year != str(year_filter):
+                    continue
+
+            # Apply SEC section filter
+            if section_filter and section_filter != "All":
+                c_sec = chunk_meta.get("section", "").upper()
+                c_sec_title = chunk_meta.get("section_title", "").lower()
+                sec_target = section_filter.upper()
+                if sec_target not in c_sec and section_filter.lower() not in c_sec_title:
                     continue
 
             # Check parent context
